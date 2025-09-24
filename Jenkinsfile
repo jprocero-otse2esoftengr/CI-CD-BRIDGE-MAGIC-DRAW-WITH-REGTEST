@@ -27,6 +27,58 @@ pipeline {
 
      
     stages {
+        stage('Build') {
+            steps {
+                dir('.') {
+                    bat """
+                        java -jar ${params.XUMLC} -uml uml/BuilderUML.xml
+                        if errorlevel 1 exit /b 1
+                        echo Build completed successfully
+                        dir repository\\BuilderUML\\*.rep
+                    """
+                    archiveArtifacts artifacts: 'repository/BuilderUML/*.rep'
+                }
+            }
+        }
+         stage('Deploy') {
+            steps {
+                dir('.') {
+                    bat """
+                        echo Checking for repository files...
+                       
+                        if not exist repository\\BuilderUML\\regtestlatest.rep (
+                            echo ERROR: regtestlatest.rep not found!
+                            exit /b 1
+                        )
+                         
+                        echo All repository files found, starting deployment...
+                        npx e2e-bridge-cli deploy repository/BuilderUML/regtestlatest.rep -h ${params.BRIDGE_HOST} -u ${params.BRIDGE_USER} -P ${params.BRIDGE_PASSWORD} -o overwrite
+                        
+                    """
+                }
+            }
+        }
+        stage('List Test Suites') {
+            steps {
+                dir('regressiontest') {
+                    bat """
+                        echo Listing available test suites...
+                        java -jar ${REGTEST} -project . -list
+                        echo.
+                        echo Checking project structure...
+                        dir /s testsuite
+                        echo.
+                        echo Checking if testsuite.xml exists...
+                        if exist testsuite\\testsuite.xml (
+                            echo testsuite.xml found
+                            type testsuite\\testsuite.xml | findstr "testcase"
+                        ) else (
+                            echo testsuite.xml not found
+                        )
+                    """
+                }
+            }
+        }
         stage('Test') {
             steps {
                 dir('.') {
@@ -120,87 +172,6 @@ pipeline {
                             junit 'regressiontest/result.xml'
                         }
                     }
-                }
-            }
-        }
-        stage('Build') {
-            steps {
-                dir('.') {
-                    bat """
-                        echo Starting build process...
-                        java -jar ${params.XUMLC} -uml uml/BuilderUML.xml
-                        if errorlevel 1 exit /b 1
-                        echo Build completed successfully
-                        dir repository\\BuilderUML\\*.rep
-                    """
-                    archiveArtifacts artifacts: 'repository/BuilderUML/*.rep'
-                }
-            }
-        }
-        stage('Deploy') {
-            steps {
-                dir('.') {
-                    bat """
-                        echo Checking for repository files...
-                       
-                        if not exist repository\\BuilderUML\\regtestlatest.rep (
-                            echo ERROR: regtestlatest.rep not found!
-                            exit /b 1
-                        )
-                         
-                        echo All repository files found, starting deployment...
-                        npx e2e-bridge-cli deploy repository/BuilderUML/regtestlatest.rep -h ${params.BRIDGE_HOST} -u ${params.BRIDGE_USER} -P ${params.BRIDGE_PASSWORD} -o overwrite
-                        
-                    """
-                }
-            }
-        }
-        stage('Start Service') {
-            steps {
-                dir('.') {
-                    script {
-                        try {
-                            bat """
-                                echo Starting the deployed service...
-                                npx e2e-bridge-cli start regtestlatest -h ${params.BRIDGE_HOST} -u ${params.BRIDGE_USER} -P ${params.BRIDGE_PASSWORD}
-                                if errorlevel 1 (
-                                    echo WARNING: Service start failed, but deployment was successful
-                                    echo This may be due to port conflicts or service already running
-                                    echo Continuing with pipeline...
-                                ) else (
-                                    echo Service started successfully
-                                )
-                                echo.
-                                echo Checking service status...
-                                npx e2e-bridge-cli status regtestlatest -h ${params.BRIDGE_HOST} -u ${params.BRIDGE_USER} -P ${params.BRIDGE_PASSWORD}
-                            """
-                        } catch (Exception e) {
-                            echo "Service start failed - this is expected due to port conflicts"
-                            echo "Deployment was successful, service can be started manually if needed"
-                            echo "Continuing with pipeline..."
-                        }
-                    }
-                }
-            }
-        }
-        stage('List Test Suites') {
-            steps {
-                dir('regressiontest') {
-                    bat """
-                        echo Listing available test suites...
-                        java -jar ${params.REGTEST} -project . -list
-                        echo.
-                        echo Checking project structure...
-                        dir /s testsuite
-                        echo.
-                        echo Checking if testsuite.xml exists...
-                        if exist testsuite\\testsuite.xml (
-                            echo testsuite.xml found
-                            type testsuite\\testsuite.xml | findstr "testcase"
-                        ) else (
-                            echo testsuite.xml not found
-                        )
-                    """
                 }
             }
         }
